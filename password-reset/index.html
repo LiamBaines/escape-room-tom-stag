@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Password Reset</title>
+    <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f5f5f5;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+    .container {
+      background: white;
+      padding: 24px;
+      border-radius: 8px;
+      width: 340px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h2 {
+      margin-top: 0;
+    }
+    .question {
+      margin-bottom: 16px;
+    }
+
+    /* Shared styling for inputs + selects */
+    .field {
+      width: 100%;
+      padding: 8px;
+      margin-top: 4px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+      background: white;
+      box-sizing: border-box;
+    }
+
+    .field.error {
+      border-color: red;
+      background: #ffe6e6;
+    }
+
+    select.field {
+      cursor: pointer;
+    }
+
+    button {
+      width: 100%;
+      padding: 10px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+    .result {
+      margin-top: 16px;
+      font-weight: bold;
+      text-align: center;
+    }
+    .password {
+      margin-top: 12px;
+      padding: 10px;
+      background: #e6ffe6;
+      border: 1px solid #00aa00;
+      border-radius: 4px;
+      display: none;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+    <h2>Security Questions</h2>
+
+    <div id="questions"></div>
+
+    <button onclick="checkAnswers()">Submit</button>
+
+    <div class="result" id="result"></div>
+    <div class="password" id="passwordBox"></div>
+</div>
+
+<script>
+    function loadConfigFromQuery() {
+      const params = new URLSearchParams(window.location.search);
+      const raw = params.get("p");
+
+      if (!raw) {
+        throw new Error("Missing config (?p=...)");
+      }
+
+      const json = atob(raw);
+      return JSON.parse(json);
+    }
+
+    const CONFIG = loadConfigFromQuery();
+
+    CONFIG.normalize = (str) => (str || "").trim().toLowerCase();
+
+    function renderQuestions() {
+      const container = document.getElementById("questions");
+
+      CONFIG.questions.forEach(q => {
+        const wrap = document.createElement("div");
+        wrap.className = "question";
+
+        const label = document.createElement("label");
+        label.textContent = q.label;
+
+        wrap.appendChild(label);
+
+        if (q.type === "text") {
+          const input = document.createElement("input");
+          input.className = "field";
+          input.dataset.key = q.key;
+          wrap.appendChild(input);
+        }
+
+        if (q.type === "select") {
+          const select = document.createElement("select");
+          select.className = "field";
+          select.dataset.key = q.key;
+
+          q.options.forEach(opt => {
+            const o = document.createElement("option");
+            o.value = opt.value;
+            o.textContent = opt.label;
+            select.appendChild(o);
+          });
+
+          wrap.appendChild(select);
+        }
+
+        container.appendChild(wrap);
+      });
+    }
+
+    renderQuestions();
+
+    function checkAnswers() {
+      const fields = document.querySelectorAll("[data-key]");
+      let allCorrect = true;
+
+      fields.forEach(field => {
+        const key = field.dataset.key;
+        const userValue = CONFIG.normalize(field.value || "");
+        const correctValue = CONFIG.normalize(CONFIG.answers[key] || "");
+
+        if (userValue !== correctValue) {
+          field.classList.add("error");
+          allCorrect = false;
+        } else {
+          field.classList.remove("error");
+        }
+      });
+
+      const result = document.getElementById("result");
+      const passwordBox = document.getElementById("passwordBox");
+
+      if (allCorrect) {
+        result.textContent = "All answers correct.";
+        passwordBox.style.display = "block";
+        passwordBox.textContent = "Password: " + CONFIG.password;
+      } else {
+        result.textContent = "Some answers are incorrect.";
+        passwordBox.style.display = "none";
+      }
+    }
+  </script>
+</body>
+</html>

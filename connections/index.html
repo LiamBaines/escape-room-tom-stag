@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connections</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f5f0e8;
+    --text: #1a1714;
+    --tile-bg: #ffffff;
+    --tile-border: #c8c2b8;
+    --tile-sel-bg: #3a3530;
+    --tile-sel-text: #f5f0e8;
+    --cat-0-bg: #f0c93a; --cat-0-text: #1a1714;
+    --cat-1-bg: #6aaa64; --cat-1-text: #ffffff;
+    --cat-2-bg: #4a90d9; --cat-2-text: #ffffff;
+    --cat-3-bg: #9b59b6; --cat-3-text: #ffffff;
+    --letter-bg: #2c2825;
+    --letter-text: #f5f0e8;
+    --gap: 8px;
+    --radius: 10px;
+  }
+
+  body {
+    background: var(--bg);
+    font-family: 'DM Sans', sans-serif;
+    color: var(--text);
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px;
+  }
+
+  #game {
+    width: 100%;
+    max-width: 560px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+
+  #grid {
+    position: relative;
+    width: 100%;
+  }
+  /* height set by JS once we know tile size */
+
+  /* ── TILE WRAPPER ── */
+  .tile-wrapper {
+    position: absolute;
+    perspective: 700px;
+    transition: top  0.42s cubic-bezier(0.4, 0, 0.2, 1),
+                left 0.42s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* ── TILE (flip container) ── */
+  .tile {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    transform-style: preserve-3d;
+    transition: transform 0.52s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: var(--radius);
+    cursor: pointer;
+  }
+  .tile.is-flipped  { transform: rotateY(180deg); }
+  .tile.no-pointer  { cursor: default; }
+
+  /* ── FACES ── */
+  .face {
+    position: absolute;
+    inset: 0;
+    border-radius: var(--radius);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .face-front {
+    background: var(--tile-bg);
+    border: 2px solid var(--tile-border);
+    font-family: 'DM Mono', monospace;
+    font-size: clamp(12px, 2.2vw, 15px);
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text);
+    padding: 6px 5px;
+    line-height: 1.3;
+    user-select: none;
+    transition: background 0.12s, border-color 0.12s, color 0.12s,
+                box-shadow 0.12s, transform 0.12s;
+  }
+
+  .face-back {
+    transform: rotateY(180deg);
+    /* colour / content set dynamically */
+    font-family: 'DM Mono', monospace;
+  }
+
+  /* Selected state */
+  .tile.selected .face-front {
+    background: var(--tile-sel-bg);
+    border-color: var(--tile-sel-bg);
+    color: var(--tile-sel-text);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.22);
+    transform: translateY(-3px);
+  }
+
+  /* Hover – only on interactive unselected tiles */
+  .interactive .tile:not(.selected) .face-front:hover {
+    border-color: #9a948a;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+    transform: translateY(-2px);
+  }
+
+  /* ── Wrong-guess shake/flash ── */
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    15%  { transform: translateX(-7px); }
+    35%  { transform: translateX(7px); }
+    55%  { transform: translateX(-5px); }
+    75%  { transform: translateX(5px); }
+    90%  { transform: translateX(-2px); }
+  }
+  @keyframes flashWrong {
+    0%,100% { background: var(--tile-bg); border-color: var(--tile-border); }
+    50%     { background: #ffd4d0; border-color: #e57373; }
+  }
+  .tile.shake .face-front {
+    animation: shake 0.48s ease, flashWrong 0.48s ease;
+  }
+
+  /* ── Category banner (thin strip at top of solved row) ── */
+  .cat-banner {
+    position: absolute;
+    /* left / top / width set by JS; height is fixed and small */
+    height: 22px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    z-index: 10;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .cat-banner.visible { opacity: 1; }
+
+  /* ── Controls area: fixed height, buttons and well-done share the same space ── */
+  #controls {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 48px;
+    width: 100%;
+  }
+
+  #btnGroup {
+    display: flex;
+    gap: 10px;
+    position: absolute;
+    transition: opacity 0.4s ease;
+  }
+  #btnGroup.hidden { opacity: 0; pointer-events: none; }
+
+  #wellDone {
+    position: absolute;
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #7a746e;
+    opacity: 0;
+    transition: opacity 0.5s ease;
+    pointer-events: none;
+  }
+  #wellDone.visible { opacity: 1; }
+
+  button {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 10px 28px;
+    border-radius: 999px;
+    border: 2px solid var(--text);
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.14s, color 0.14s;
+  }
+  button:hover:not(:disabled) { background: var(--text); color: var(--bg); }
+  button:disabled { opacity: 0.3; cursor: default; }
+  #submitBtn { background: var(--text); color: var(--bg); }
+  #submitBtn:hover:not(:disabled) { background: #3a3530; border-color: #3a3530; }
+</style>
+</head>
+<body>
+<div id="game">
+    <div id="grid"></div>
+    <div id="controls">
+        <div id="btnGroup">
+            <button id="deselectBtn" disabled>Deselect all</button>
+            <button id="submitBtn"   disabled>Submit</button>
+        </div>
+        <div id="wellDone">Well done!</div>
+    </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+// PUZZLE DATA (loaded from query param)
+// ═══════════════════════════════════════════════════
+
+function loadPuzzleFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+
+  // expects ?p=BASE64_JSON
+  const raw = params.get('p');
+  if (!raw) {
+    throw new Error("Missing puzzle data (?p=...)");
+  }
+
+  const json = atob(raw);
+  const data = JSON.parse(json);
+
+  return {
+    CATEGORIES: data.categories,
+    LETTERS: data.letters
+  };
+}
+
+const { CATEGORIES, LETTERS } = loadPuzzleFromQuery();
+
+// ═══════════════════════════════════════════════════
+// END PUZZLE DATA
+// ═══════════════════════════════════════════════════
+
+const CAT_STYLE = [
+  { bg: '#f0c93a', text: '#1a1714', banner: '#c49f1a', bannerText: '#1a1714' },
+  { bg: '#6aaa64', text: '#ffffff', banner: '#3d7a3d', bannerText: '#ffffff' },
+  { bg: '#4a90d9', text: '#ffffff', banner: '#1f5fa6', bannerText: '#ffffff' },
+  { bg: '#9b59b6', text: '#ffffff', banner: '#6a2d8a', bannerText: '#ffffff' },
+];
+
+// Canonical final order: sorted by colour index
+const sortedCats = [...CATEGORIES].sort((a, b) => a.color - b.color);
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// ── Build tile data ──
+const allWords = CATEGORIES.flatMap((cat, ci) =>
+  cat.words.map(word => ({ word, catIndex: ci, solved: false, gridPos: 0 }))
+);
+const tileData = shuffle(allWords);
+tileData.forEach((d, i) => { d.gridPos = i; });
+
+// ── State ──
+let selected    = []; // tile data indices currently selected
+let solvedCount = 0;
+let locked      = false;
+
+const gridEl      = document.getElementById('grid');
+const submitBtn   = document.getElementById('submitBtn');
+const deselectBtn = document.getElementById('deselectBtn');
+
+// ── Geometry ──
+const GAP = 8;
+
+function gridWidth()  { return gridEl.offsetWidth; }
+function tileSize()   { return (gridWidth() - 3 * GAP) / 4; }
+function posToXY(pos) {
+  const sz  = tileSize();
+  const col = pos % 4;
+  const row = Math.floor(pos / 4);
+  return { left: col * (sz + GAP), top: row * (sz + GAP) };
+}
+
+// ── Build DOM (once) ──
+const els = tileData.map((d, ti) => {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'tile-wrapper interactive';
+
+  const tile = document.createElement('div');
+  tile.className = 'tile';
+
+  const front = document.createElement('div');
+  front.className = 'face face-front';
+  front.textContent = d.word;
+
+  const back = document.createElement('div');
+  back.className = 'face face-back';
+
+  tile.appendChild(front);
+  tile.appendChild(back);
+  wrapper.appendChild(tile);
+  gridEl.appendChild(wrapper);
+
+  tile.addEventListener('click', () => onTileClick(ti));
+
+  return { wrapper, tile, front, back };
+});
+
+// Set grid height and initial positions
+function setGridHeight() {
+  const sz = tileSize();
+  gridEl.style.height = (4 * sz + 3 * GAP) + 'px';
+}
+
+function applyPositions(animate) {
+  const sz = tileSize();
+  tileData.forEach((d, ti) => {
+    const w = els[ti].wrapper;
+    if (!animate) {
+      w.style.transition = 'none';
+      void w.offsetWidth;
+    }
+    w.style.width  = sz + 'px';
+    w.style.height = sz + 'px';
+    const { left, top } = posToXY(d.gridPos);
+    w.style.left = left + 'px';
+    w.style.top  = top  + 'px';
+    if (!animate) {
+      void w.offsetWidth;
+      w.style.transition = '';
+    }
+  });
+}
+
+setGridHeight();
+applyPositions(false);
+
+// ── Interaction ──
+function onTileClick(ti) {
+  if (locked || tileData[ti].solved) return;
+  if (selected.includes(ti)) {
+    selected = selected.filter(i => i !== ti);
+  } else {
+    if (selected.length >= 4) return;
+    selected = [...selected, ti];
+  }
+  syncSelectionVisuals();
+}
+
+function syncSelectionVisuals() {
+  tileData.forEach((d, ti) => {
+    if (!d.solved) els[ti].tile.classList.toggle('selected', selected.includes(ti));
+  });
+  submitBtn.disabled   = selected.length !== 4;
+  deselectBtn.disabled = selected.length === 0;
+}
+
+deselectBtn.addEventListener('click', () => { selected = []; syncSelectionVisuals(); });
+
+// ── Submit ──
+submitBtn.addEventListener('click', () => {
+  if (selected.length !== 4 || locked) return;
+
+  const catIndex = tileData[selected[0]].catIndex;
+  const correct  = selected.every(ti => tileData[ti].catIndex === catIndex);
+
+  if (!correct) {
+    selected.forEach(ti => {
+      const t = els[ti].tile;
+      t.classList.remove('shake');
+      void t.offsetWidth;
+      t.classList.add('shake');
+      t.addEventListener('animationend', () => t.classList.remove('shake'), { once: true });
+    });
+    return;
+  }
+
+  locked = true;
+  submitBtn.disabled = deselectBtn.disabled = true;
+
+  // Mark solved
+  selected.forEach(ti => { tileData[ti].solved = true; });
+  const solvedTIs = [...selected];
+  selected = [];
+  syncSelectionVisuals();
+
+  // ── Redistribute positions ──
+  const targetRow = solvedCount++;
+
+  // Sort solved tiles by current gridPos (left→right) and assign top row cols
+  solvedTIs.sort((a, b) => tileData[a].gridPos - tileData[b].gridPos);
+  solvedTIs.forEach((ti, k) => { tileData[ti].gridPos = targetRow * 4 + k; });
+
+  // Remaining unsolved: sort by gridPos, pack into remaining positions
+  const takenPos  = new Set(tileData.filter(d => d.solved).map(d => d.gridPos));
+  const freePos   = Array.from({length: 16}, (_, i) => i).filter(p => !takenPos.has(p));
+  const unsolvedTIs = tileData
+    .map((d, ti) => ({ d, ti }))
+    .filter(({ d }) => !d.solved)
+    .sort((a, b) => a.d.gridPos - b.d.gridPos)
+    .map(({ ti }) => ti);
+  unsolvedTIs.forEach((ti, k) => { tileData[ti].gridPos = freePos[k]; });
+
+  // Slide all tiles to new positions
+  applyPositions(true);
+
+  // After slide: flip solved tiles to show category colour
+  const SLIDE_MS   = 460;
+  const FLIP_STAGGER = 80;
+  const style = CAT_STYLE[CATEGORIES[catIndex].color];
+
+  setTimeout(() => {
+    solvedTIs.forEach((ti, k) => {
+      const { tile, back, wrapper } = els[ti];
+      wrapper.classList.remove('interactive');
+      tile.classList.add('no-pointer');
+
+      // Set back face to category colour + clue word
+      back.style.background  = style.bg;
+      back.style.color       = style.text;
+      back.style.fontSize    = 'clamp(12px, 2.2vw, 15px)';
+      back.style.fontWeight  = '500';
+      back.style.letterSpacing = '0.04em';
+      back.style.padding     = '6px 5px';
+      back.style.lineHeight  = '1.3';
+      back.style.textTransform = 'uppercase';
+      back.textContent       = tileData[ti].word;
+
+      setTimeout(() => tile.classList.add('is-flipped'), k * FLIP_STAGGER);
+    });
+
+    // After all tiles have flipped, show the category banner across the row
+    const allFlippedDelay = solvedTIs.length * FLIP_STAGGER + 560;
+    setTimeout(() => {
+      const BANNER_H    = 22;
+      const BANNER_INSET = 6; // gap from tile edges
+      const rowY    = posToXY(targetRow * 4).top;
+      const cat     = CATEGORIES[catIndex];
+      const banner  = document.createElement('div');
+      banner.className = 'cat-banner';
+      banner.textContent = cat.label;
+      banner.style.top    = (rowY + BANNER_INSET) + 'px';
+      banner.style.left   = BANNER_INSET + 'px';
+      banner.style.width  = (gridEl.offsetWidth - BANNER_INSET * 2) + 'px';
+      banner.style.height = BANNER_H + 'px';
+      banner.style.background = style.banner;
+      banner.style.color      = style.bannerText;
+      // store reference so we can reposition on resize
+      banner.dataset.targetRow = targetRow;
+      gridEl.appendChild(banner);
+      void banner.offsetWidth; // trigger reflow before fade-in
+      banner.classList.add('visible');
+    }, allFlippedDelay);
+
+    // Unlock after flips + banner settle
+    const unlockDelay = solvedTIs.length * FLIP_STAGGER + 700;
+    setTimeout(() => {
+      locked = false;
+      syncSelectionVisuals();
+
+      if (solvedCount === 4) {
+        submitBtn.disabled = deselectBtn.disabled = true;
+        const wellDoneEl = document.getElementById('wellDone');
+        const btnGroup   = document.getElementById('btnGroup');
+        setTimeout(() => {
+          btnGroup.classList.add('hidden');
+          wellDoneEl.classList.add('visible');
+          setTimeout(() => {
+            wellDoneEl.classList.remove('visible');
+            setTimeout(() => startLetterFlip(), 500);
+          }, 3000);
+        }, 400);
+      }
+    }, unlockDelay);
+
+  }, SLIDE_MS + 30);
+});
+
+// ── Letter flip phase ──
+// All 16 tiles are flipped, showing category colours.
+// We need to show letters 0–15 in canonical position order.
+// Strategy: slide tiles into canonical order, then for each tile in reading order:
+//   1. Swap back-face content to the letter (tile is currently showing back=colour)
+//   2. Briefly flip tile back to front (which we recolour to dark + letter) —
+//      actually simpler: just update the BACK face text to the letter and keep
+//      the flip as-is. The colour stays, letter appears on top via an overlay...
+//
+// Cleanest approach: tiles are already showing their coloured back.
+// We simply update the back face to add the letter text on top of the colour,
+// staggered in reading order. No additional flip needed — the letter just
+// appears on the coloured tile with a small fade.
+
+function startLetterFlip() {
+  locked = true;
+
+  // Fade out category banners
+  gridEl.querySelectorAll('.cat-banner').forEach(b => b.classList.remove('visible'));
+  setTimeout(() => gridEl.querySelectorAll('.cat-banner').forEach(b => b.remove()), 450);
+
+  // Re-sort into canonical grid positions (colour order 0→3, word order within)
+  sortedCats.forEach((cat, rowIdx) => {
+    const catIdx = CATEGORIES.indexOf(cat);
+    const catTIs = tileData
+      .map((d, ti) => ({ d, ti }))
+      .filter(({ d }) => d.catIndex === catIdx)
+      .sort((a, b) => a.d.gridPos - b.d.gridPos) // keep existing relative order
+      .map(({ ti }) => ti);
+
+    catTIs.forEach((ti, colIdx) => {
+      tileData[ti].gridPos = rowIdx * 4 + colIdx;
+    });
+  });
+
+  applyPositions(true);
+
+  // After any repositioning settles, reveal letters via a second flip
+  // Tile currently: is-flipped=true → showing back (colour).
+  // We flip back (remove is-flipped) after swapping the FRONT face to show letter on dark bg.
+  setTimeout(() => {
+    // Build pos→ti map
+    const posTI = new Map(tileData.map((d, ti) => [d.gridPos, ti]));
+
+    for (let pos = 0; pos < 16; pos++) {
+      const ti = posTI.get(pos);
+      if (ti === undefined) continue;
+      const { tile, front } = els[ti];
+      const letter = LETTERS[pos];
+
+      setTimeout(() => {
+        // Update front face: dark background, large letter
+        front.style.background  = '#2c2825';
+        front.style.border      = 'none';
+        front.style.borderRadius = 'var(--radius)';
+        front.style.color       = '#f5f0e8';
+        front.style.fontSize    = 'clamp(22px, 4.5vw, 34px)';
+        front.style.fontWeight  = '400';
+        front.style.letterSpacing = '0.02em';
+        front.textContent       = letter;
+
+        // Flip back to front (removes is-flipped)
+        tile.classList.remove('is-flipped');
+      }, pos * 180 + 50);
+    }
+  }, 550);
+}
+
+function repositionBanners() {
+  const BANNER_INSET = 6;
+  gridEl.querySelectorAll('.cat-banner').forEach(banner => {
+    const row = parseInt(banner.dataset.targetRow, 10);
+    banner.style.top   = (posToXY(row * 4).top + BANNER_INSET) + 'px';
+    banner.style.left  = BANNER_INSET + 'px';
+    banner.style.width = (gridEl.offsetWidth - BANNER_INSET * 2) + 'px';
+  });
+}
+
+// ── Resize handler ──
+window.addEventListener('resize', () => {
+  setGridHeight();
+  applyPositions(false);
+  repositionBanners();
+});
+</script>
+</body>
+</html>
